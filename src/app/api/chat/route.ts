@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
         // 3) 上位結果からテキストを抽出
         const contexts: string[] = []
         for await (const res of searchResults.results) {
-            contexts.push((res.document as any).content)
+            contexts.push((res.document as { content: string }).content)
         }
         const contextText = contexts.join('\n\n')
 
@@ -68,8 +68,9 @@ export async function POST(req: NextRequest) {
         const answer = chatRes.choices[0].message?.content ?? ''
         return NextResponse.json({ answer })
 
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('Chat API error:', err)
-        return NextResponse.json({ error: err.message }, { status: 500 })
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        return NextResponse.json({ error: errorMessage }, { status: 500 })
     }
 }

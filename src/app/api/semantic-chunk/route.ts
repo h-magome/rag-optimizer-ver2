@@ -60,7 +60,8 @@ ${JSON.stringify(paragraphs, null, 2)}
         }
         // 文字列配列として返却
         return NextResponse.json({ chunks })
-    } catch (e) {
+    } catch (error) {
+        console.error('JSON parse error:', error)
         return NextResponse.json(
             { error: 'JSON parse error', raw: content },
             { status: 500 }

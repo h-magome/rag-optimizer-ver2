@@ -24,7 +24,9 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json({ url: blockBlob.url });
-    } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 500 });
+    } catch (error: unknown) {
+        console.error('Upload error:', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 } 

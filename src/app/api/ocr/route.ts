@@ -48,8 +48,9 @@ export async function POST(request: NextRequest) {
         })) ?? []
 
         return NextResponse.json({ paragraphs, keyValuePairs, tables })
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('OCR error:', err)
-        return NextResponse.json({ error: err.message }, { status: 500 })
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        return NextResponse.json({ error: errorMessage }, { status: 500 })
     }
 }

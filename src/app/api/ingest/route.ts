@@ -59,8 +59,9 @@ export async function POST(req: NextRequest) {
 
         // 成功件数を返す
         return NextResponse.json({ ingested: result.results.length })
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('Ingest error:', err)
-        return NextResponse.json({ error: err.message }, { status: 500 })
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        return NextResponse.json({ error: errorMessage }, { status: 500 })
     }
 }

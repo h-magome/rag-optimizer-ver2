@@ -41,9 +41,10 @@ export default function UploadPage() {
       }
       currentUploadUrl = uploadJson.url;
       setUploadUrl(currentUploadUrl)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload error:', err)
-      setGlobalError(`アップロード失敗: ${err.message}`)
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setGlobalError(`アップロード失敗: ${errorMessage}`)
       setProcessingStep('エラー')
       return
     }
@@ -68,9 +69,10 @@ export default function UploadPage() {
       }
       currentParagraphs = ocrJson.paragraphs;
       setParagraphs(currentParagraphs)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('OCR error:', err)
-      setGlobalError(`OCR処理失敗: ${err.message}`)
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setGlobalError(`OCR処理失敗: ${errorMessage}`)
       setProcessingStep('エラー')
       return
     }
@@ -95,9 +97,10 @@ export default function UploadPage() {
       }
       currentChunks = chunkJson.chunks.map((c: string, i: number) => ({ chunk: c, index: i }));
       setChunks(currentChunks)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Semantic chunk error:', err)
-      setGlobalError(`セマンティックチャンク化失敗: ${err.message}`)
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setGlobalError(`セマンティックチャンク化失敗: ${errorMessage}`)
       setProcessingStep('エラー')
       return
     }
@@ -123,9 +126,10 @@ export default function UploadPage() {
         throw new Error(ingestJson.error || `DB登録エラー: ${ingestRes.statusText}`)
       }
       setProcessingStep(`処理完了: ${ingestJson.ingested} 件登録`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Ingest error:', err)
-      setGlobalError(`DB登録失敗: ${err.message}`)
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setGlobalError(`DB登録失敗: ${errorMessage}`)
       setProcessingStep('エラー')
       return
     }

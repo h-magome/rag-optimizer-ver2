@@ -24,8 +24,6 @@ jobs:
           node-version: '20.x'
 
       - name: npm install, build, and test
-        env:
-          AZURE_OPENAI_API_VERSION: '2025-01-01-preview'
         run: |
           npm install
           npm run build --if-present
@@ -63,4 +61,4 @@ jobs:
           app-name: 'rag-optimizer'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_C71514D9AF3145B88862E2EBA0889590 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_11FF9B0B1459425F951F37CFDC1FE92C }}

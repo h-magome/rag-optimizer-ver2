@@ -1,130 +1,190 @@
 'use client'
 
 import { useState } from 'react'
-import { prepareChunksFromParagraphs } from '@/lib/prepareChunks'
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [uploadUrl, setUploadUrl] = useState<string | null>(null)
-  const [loadingUpload, setLoadingUpload] = useState(false)
-
-  const [loadingOcr, setLoadingOcr] = useState(false)
-  const [ocrError, setOcrError] = useState<string | null>(null)
   const [paragraphs, setParagraphs] = useState<string[]>([])
-
-  const [loadingChunk, setLoadingChunk] = useState(false)
-  const [chunkError, setChunkError] = useState<string | null>(null)
   const [chunks, setChunks] = useState<{ chunk: string; index: number }[]>([])
+
+  const [processingStep, setProcessingStep] = useState<string | null>(null) // Overall progress
+  const [globalError, setGlobalError] = useState<string | null>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFile(e.target.files?.[0] ?? null)
     setUploadUrl(null)
     setParagraphs([])
     setChunks([])
-    setOcrError(null)
-    setChunkError(null)
+    setProcessingStep(null)
+    setGlobalError(null)
   }
 
-  const handleUpload = async () => {
+  const handleProcessAll = async () => {
     if (!file) return
-    setLoadingUpload(true)
+
+    setGlobalError(null)
+    setUploadUrl(null) // Reset previous results if any
+    setParagraphs([])
+    setChunks([])
+
+    // 1. Upload
+    setProcessingStep('アップロード中…')
+    let currentUploadUrl = null;
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', body: form })
-      const json = await res.json()
-      if (res.ok && json.url) {
-        setUploadUrl(json.url)
-      } else {
-        alert('アップロードエラー: ' + (json.error || JSON.stringify(json)))
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: form })
+      const uploadJson = await uploadRes.json()
+      if (!uploadRes.ok || !uploadJson.url) {
+        throw new Error(uploadJson.error || `アップロードエラー: ${uploadRes.statusText}`)
       }
-    } catch (err) {
-      console.error(err)
-      alert('アップロードに失敗しました')
-    } finally {
-      setLoadingUpload(false)
+      currentUploadUrl = uploadJson.url;
+      setUploadUrl(currentUploadUrl)
+    } catch (err: any) {
+      console.error('Upload error:', err)
+      setGlobalError(`アップロード失敗: ${err.message}`)
+      setProcessingStep('エラー')
+      return
+    }
+
+    // 2. OCR
+    if (!currentUploadUrl) {
+      setGlobalError('アップロードURLが取得できませんでした。')
+      setProcessingStep('エラー')
+      return
+    }
+    setProcessingStep('OCR処理中…')
+    let currentParagraphs: string[] = [];
+    try {
+      const ocrRes = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: currentUploadUrl }),
+      })
+      const ocrJson = await ocrRes.json()
+      if (!ocrRes.ok || !Array.isArray(ocrJson.paragraphs)) {
+        throw new Error(ocrJson.error || `OCRエラー: ${ocrRes.statusText}`)
+      }
+      currentParagraphs = ocrJson.paragraphs;
+      setParagraphs(currentParagraphs)
+    } catch (err: any) {
+      console.error('OCR error:', err)
+      setGlobalError(`OCR処理失敗: ${err.message}`)
+      setProcessingStep('エラー')
+      return
+    }
+
+    // 3. Semantic Chunk
+    if (currentParagraphs.length === 0) {
+      setGlobalError('OCR結果が空です。')
+      setProcessingStep('エラー')
+      return
+    }
+    setProcessingStep('セマンティックチャンク化中…')
+    let currentChunks: { chunk: string; index: number }[] = [];
+    try {
+      const chunkRes = await fetch('/api/semantic-chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paragraphs: currentParagraphs }),
+      })
+      const chunkJson = await chunkRes.json()
+      if (!chunkRes.ok || !Array.isArray(chunkJson.chunks)) {
+        throw new Error(chunkJson.error || `チャンク化エラー: ${chunkRes.statusText}`)
+      }
+      currentChunks = chunkJson.chunks.map((c: string, i: number) => ({ chunk: c, index: i }));
+      setChunks(currentChunks)
+    } catch (err: any) {
+      console.error('Semantic chunk error:', err)
+      setGlobalError(`セマンティックチャンク化失敗: ${err.message}`)
+      setProcessingStep('エラー')
+      return
+    }
+
+    // 4. Ingest
+    if (currentChunks.length === 0 || !file) {
+      setGlobalError('チャンク結果が空か、ファイル情報がありません。')
+      setProcessingStep('エラー')
+      return
+    }
+    setProcessingStep('データベース登録中…')
+    try {
+      const ingestRes = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceId: file.name,
+          chunks: currentChunks.map(c => ({ chunk: c.chunk, index: c.index })) // Ensure correct format for ingest
+        }),
+      })
+      const ingestJson = await ingestRes.json()
+      if (!ingestRes.ok || !ingestJson.ingested) {
+        throw new Error(ingestJson.error || `DB登録エラー: ${ingestRes.statusText}`)
+      }
+      setProcessingStep(`処理完了: ${ingestJson.ingested} 件登録`)
+    } catch (err: any) {
+      console.error('Ingest error:', err)
+      setGlobalError(`DB登録失敗: ${err.message}`)
+      setProcessingStep('エラー')
+      return
     }
   }
 
-  const handleOcr = async () => {
-    if (!uploadUrl) return
-    setLoadingOcr(true)
-    setOcrError(null)
-    try {
-      const res = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: uploadUrl }),
-      })
-      const json = await res.json()
-      if (!res.ok || !Array.isArray(json.paragraphs)) {
-        throw new Error(json.error || `status ${res.status}`)
-      }
-      setParagraphs(json.paragraphs)
-    } catch (err: any) {
-      console.error(err)
-      setOcrError(err.message)
-    } finally {
-      setLoadingOcr(false)
-    }
-  }
-
-  const handleSemanticChunk = async () => {
-    if (paragraphs.length === 0) return
-    setLoadingChunk(true)
-    setChunkError(null)
-    try {
-      const res = await fetch('/api/semantic-chunk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paragraphs }),
-      })
-      const json = await res.json()
-      if (!res.ok || !Array.isArray(json.chunks)) {
-        throw new Error(json.error || `status ${res.status}`)
-      }
-      setChunks(json.chunks.map((c: string, i: number) => ({ chunk: c, index: i })))
-    } catch (err: any) {
-      console.error(err)
-      setChunkError(err.message)
-    } finally {
-      setLoadingChunk(false)
-    }
-  }
+  const isProcessing = !!(processingStep && processingStep !== 'エラー' && !processingStep?.startsWith('処理完了'));
 
   return (
     <main className="p-8 max-w-2xl mx-auto space-y-12">
       <h1 className="text-3xl font-bold text-center">RAG optimizer ver2</h1>
 
-      {/* 1. ファイルアップロード */}
+      {/* 1. ファイルアップロード & 処理開始 */}
       <section className="space-y-4">
-        <h2 className="text-xl font-semibold">1. ファイルアップロード</h2>
+        <h2 className="text-xl font-semibold">ファイルを選択して処理を開始</h2>
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 bg-gray-50">
           <input
             type="file"
             accept="application/pdf,image/*"
             onChange={handleFileChange}
+            disabled={isProcessing}
             className="block w-full text-sm text-gray-500 
                        file:mr-4 file:py-2 file:px-4 
                        file:rounded file:border-0 
                        file:text-sm file:font-semibold 
                        file:bg-blue-50 file:text-blue-700 
-                       hover:file:bg-blue-100"
+                       hover:file:bg-blue-100 disabled:opacity-50"
           />
-          {file && (
+          {file && !isProcessing && (
             <div className="mt-2 text-green-600">
               選択済み: <span className="font-medium">{file.name}</span>
             </div>
           )}
         </div>
         <button
-          onClick={handleUpload}
-          disabled={!file || loadingUpload}
-          className="px-4 py-2 bg-blue-600 text-white rounded 
-                     hover:bg-blue-700 disabled:opacity-50"
+          onClick={handleProcessAll}
+          disabled={!file || isProcessing}
+          className="w-full px-4 py-3 bg-blue-600 text-white rounded text-lg 
+                     hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loadingUpload ? 'アップロード中…' : 'アップロード'}
+          {isProcessing ? processingStep : (processingStep?.startsWith('処理完了') ? '再度処理する' : 'アップロードして処理を開始')}
         </button>
+
+        {/* 進捗・エラー表示 */}
+        {processingStep && processingStep !== 'エラー' && !processingStep?.startsWith('処理完了') && (
+          <div className="mt-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
+            <p>{processingStep}</p>
+          </div>
+        )}
+        {globalError && (
+          <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            <p>エラー: {globalError}</p>
+          </div>
+        )}
+        {processingStep?.startsWith('処理完了') && (
+          <div className="mt-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+            <p>{processingStep}</p>
+          </div>
+        )}
+
         {uploadUrl && (
           <p className="mt-2 text-sm break-all">
             アップロード先:{' '}
@@ -135,29 +195,13 @@ export default function UploadPage() {
         )}
       </section>
 
-      {/* 2. OCR 実行 */}
-      {uploadUrl && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">2. OCR 実行</h2>
-          <button
-            onClick={handleOcr}
-            disabled={loadingOcr}
-            className="px-4 py-2 bg-green-600 text-white rounded 
-                       hover:bg-green-700 disabled:opacity-50"
-          >
-            {loadingOcr ? 'OCR中…' : 'OCR 実行'}
-          </button>
-          {ocrError && <p className="text-red-600">エラー: {ocrError}</p>}
-        </section>
-      )}
-
-      {/* 3. OCR 段落プレビュー */}
+      {/* 2. OCR 段落プレビュー (処理が完了していれば表示) */}
       {paragraphs.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">3. OCR 段落プレビュー ({paragraphs.length} 個)</h2>
-          <div className="space-y-2">
+        <section className="space-y-4 mt-8 pt-8 border-t">
+          <h2 className="text-xl font-semibold">OCR 段落プレビュー ({paragraphs.length} 個)</h2>
+          <div className="space-y-2 max-h-96 overflow-y-auto bg-gray-50 p-4 rounded">
             {paragraphs.map((p, i) => (
-              <p key={i} className="whitespace-pre-wrap bg-gray-100 p-2 rounded">
+              <p key={i} className="whitespace-pre-wrap bg-gray-100 p-2 rounded text-sm">
                 {p}
               </p>
             ))}
@@ -165,32 +209,17 @@ export default function UploadPage() {
         </section>
       )}
 
-      {/* 4. セマンティックチャンク化 */}
-      {paragraphs.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">4. セマンティックチャンク化</h2>
-          <button
-            onClick={handleSemanticChunk}
-            disabled={loadingChunk}
-            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
-          >
-            {loadingChunk ? 'チャンク化中…' : '意味単位でチャンク化'}
-          </button>
-          {chunkError && <p className="text-red-600">エラー: {chunkError}</p>}
-        </section>
-      )}
-
-      {/* 5. チャンクプレビュー */}
+      {/* 3. チャンクプレビュー (処理が完了していれば表示) */}
       {chunks.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">5. チャンクプレビュー ({chunks.length} 個)</h2>
-          <div className="space-y-4">
+        <section className="space-y-4 mt-8 pt-8 border-t">
+          <h2 className="text-xl font-semibold">チャンクプレビュー ({chunks.length} 個)</h2>
+          <div className="space-y-4 max-h-96 overflow-y-auto bg-gray-50 p-4 rounded">
             {chunks.map((c) => (
               <div
                 key={c.index}
-                className="p-4 bg-white rounded shadow-sm border"
+                className="p-3 bg-white rounded shadow-sm border text-sm"
               >
-                <strong className="block mb-2">Chunk {c.index + 1}:</strong>
+                <strong className="block mb-1">Chunk {c.index + 1}:</strong>
                 <p className="whitespace-pre-wrap">{c.chunk}</p>
               </div>
             ))}

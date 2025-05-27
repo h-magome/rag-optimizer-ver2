@@ -61,4 +61,4 @@ jobs:
           app-name: 'rag-optimizer'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_C9594D8400B7476AB36BF7C89C49AE2D }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_C71514D9AF3145B88862E2EBA0889590 }}

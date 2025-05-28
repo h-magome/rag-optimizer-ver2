@@ -136,13 +136,6 @@ export default function HomePage() {
                     >
                       表示
                     </a>
-                    <a
-                      href={file.url}
-                      download={file.name}
-                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors"
-                    >
-                      ダウンロード
-                    </a>
                   </div>
                 </div>
               </div>

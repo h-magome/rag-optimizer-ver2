@@ -31,7 +31,7 @@ export default function HomePage() {
       } else {
         setError(data.error || 'ファイル一覧の取得に失敗しました');
       }
-    } catch (err) {
+    } catch {
       setError('ネットワークエラーが発生しました');
     } finally {
       setLoading(false);
